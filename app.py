@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import time
 
 # ============================================================
-# Page config
+# Page configuration
 # ============================================================
 st.set_page_config(
     page_title="DFT Defect Formation Energy Tutorial",
@@ -17,18 +17,18 @@ st.set_page_config(
 st.title("Defect Formation Energy using DFT")
 st.markdown(
     """
-    **An interactive tutorial with animation**
+    **A realistic, research-grade tutorial with multiple charge states,
+    defect levels, and animation.**
 
-    This app explains **what defect formation energy is**,  
-    **how it is computed using DFT**,  
-    and **why it depends on the Fermi level**.
+    This app follows the same methodology used in
+    *semiconductor defect literature (CdTe, CdSeTe, CZTS, CIGS, perovskites)*.
     """
 )
 
 # ============================================================
 # Section 1: Theory
 # ============================================================
-st.header("1️⃣ Theory: Defect Formation Energy")
+st.header("1️⃣ Theory")
 
 st.latex(
     r"""
@@ -43,53 +43,31 @@ st.latex(
 
 st.markdown(
     """
-    **Meaning of terms**
+    **Important physical insights**
 
-    - **E_defect**: Total energy of defective supercell (DFT)
-    - **E_bulk**: Total energy of pristine supercell (DFT)
-    - **nᵢ**: Number of atoms added (+) or removed (−)
-    - **μᵢ**: Chemical potential of element *i*
-    - **q**: Defect charge state
-    - **E_F**: Fermi level (from VBM → CBM)
-    - **E_VBM**: Valence band maximum
-    - **E_corr**: Finite-size / charge correction (FNV, etc.)
+    - Each **charge state** forms a straight line
+    - The **slope** equals the charge state *q*
+    - **Crossing points** between charge states are
+      **charge transition levels (CTLs)**
+    - CTLs define **defect levels inside the band gap**
     """
 )
 
 # ============================================================
-# Section 2: Workflow
+# Section 2: Sidebar Inputs
 # ============================================================
-st.header("2️⃣ DFT Workflow")
-
-st.markdown(
-    """
-    **Step 1 — Bulk calculation**
-    - Relax pristine supercell
-    - Extract total energy and VBM
-
-    **Step 2 — Defect calculation**
-    - Create vacancy / interstitial / substitution
-    - Relax structure
-    - Compute total energy for each charge state
-
-    **Step 3 — Chemical potentials**
-    - Choose growth conditions (rich / poor)
-
-    **Step 4 — Scan Fermi level**
-    - From VBM to CBM
-    - Plot formation energy
-    """
-)
-
-# ============================================================
-# Sidebar Inputs
-# ============================================================
-st.sidebar.header("🔧 Input Parameters")
+st.sidebar.header("🔧 DFT Inputs")
 
 E_bulk = st.sidebar.number_input("Bulk total energy (eV)", value=-500.0)
-E_defect = st.sidebar.number_input("Defect total energy (eV)", value=-495.0)
 
-q = st.sidebar.selectbox("Defect charge state (q)", [-2, -1, 0, 1, 2])
+st.sidebar.subheader("Defect total energies (per charge state)")
+E_defect_q = {
+    -2: st.sidebar.number_input("E_defect (q = -2)", value=-494.0),
+    -1: st.sidebar.number_input("E_defect (q = -1)", value=-494.5),
+     0: st.sidebar.number_input("E_defect (q =  0)", value=-495.0),
+     1: st.sidebar.number_input("E_defect (q = +1)", value=-494.6),
+     2: st.sidebar.number_input("E_defect (q = +2)", value=-494.2),
+}
 
 E_VBM = st.sidebar.number_input("VBM (eV)", value=0.0)
 band_gap = st.sidebar.number_input("Band gap (eV)", value=1.5)
@@ -105,113 +83,139 @@ n_A = st.sidebar.number_input("n_A", value=-1)
 n_B = st.sidebar.number_input("n_B", value=0)
 
 # ============================================================
-# Core calculation
+# Core computation
 # ============================================================
-E_F = np.linspace(0, band_gap, 300)
+E_F = np.linspace(0, band_gap, 400)
 
-E_form = (
-    E_defect
-    - E_bulk
-    + n_A * mu_A
-    + n_B * mu_B
-    + q * (E_F + E_VBM)
-    + E_corr
-)
+def formation_energy(E_def, q, Ef):
+    return (
+        E_def
+        - E_bulk
+        + n_A * mu_A
+        + n_B * mu_B
+        + q * (Ef + E_VBM)
+        + E_corr
+    )
+
+Ef_dict = {
+    q: formation_energy(E_defect_q[q], q, E_F)
+    for q in E_defect_q
+}
 
 # ============================================================
-# Section 3: Static Plot
+# Section 3: Multiple Charge States Plot
 # ============================================================
-st.header("3️⃣ Static Defect Formation Energy Plot")
+st.header("3️⃣ Multiple Charge States (Realistic Plot)")
+
+colors = {
+    -2: "purple",
+    -1: "blue",
+     0: "black",
+     1: "green",
+     2: "orange",
+}
 
 fig, ax = plt.subplots()
-ax.plot(E_F, E_form, linewidth=2)
+
+for q in sorted(Ef_dict):
+    ax.plot(
+        E_F,
+        Ef_dict[q],
+        label=f"q = {q}",
+        linewidth=2,
+        color=colors[q]
+    )
+
+ax.set_xlim(0, band_gap)
 ax.set_xlabel("Fermi Level (eV)")
 ax.set_ylabel("Defect Formation Energy (eV)")
 ax.set_title("Defect Formation Energy vs Fermi Level")
+ax.legend()
 ax.grid(True)
+
 st.pyplot(fig)
 plt.close(fig)
 
 # ============================================================
-# Section 4: Interactive Slider Animation
+# Section 4: Charge Transition Levels (CTLs)
 # ============================================================
-st.header("4️⃣ Interactive Animation (Recommended for Teaching)")
+st.header("4️⃣ Charge Transition Levels (Defect Levels)")
+
+ctl_list = []
+
+for q1 in Ef_dict:
+    for q2 in Ef_dict:
+        if q2 == q1 + 1:
+            diff = Ef_dict[q1] - Ef_dict[q2]
+            sign_change = np.where(np.diff(np.sign(diff)))[0]
+            if len(sign_change) > 0:
+                idx = sign_change[0]
+                ctl_energy = E_F[idx]
+                ctl_list.append((q1, q2, ctl_energy))
+
+if ctl_list:
+    for q1, q2, e in ctl_list:
+        st.markdown(
+            f"""
+            **ε({q1}/{q2}) = {e:.2f} eV**
+
+            ➜ Transition from charge **{q1} → {q2}**
+            """
+        )
+else:
+    st.warning("No CTLs found within the band gap.")
+
+# ============================================================
+# Section 5: Interactive Animation (Slider)
+# ============================================================
+st.header("5️⃣ Interactive Fermi-Level Animation")
 
 Ef_slider = st.slider(
-    "Move Fermi Level (eV)",
+    "Move Fermi level (eV)",
     min_value=0.0,
     max_value=band_gap,
     value=0.0,
     step=0.01
 )
 
-Ef_current = (
-    E_defect
-    - E_bulk
-    + n_A * mu_A
-    + n_B * mu_B
-    + q * (Ef_slider + E_VBM)
-    + E_corr
-)
-
 fig, ax = plt.subplots()
-ax.plot(E_F, E_form, label="Formation Energy")
-ax.scatter(Ef_slider, Ef_current, color="red", s=100, zorder=3)
+
+for q in Ef_dict:
+    ax.plot(E_F, Ef_dict[q], color=colors[q], alpha=0.4)
+
+for q in Ef_dict:
+    Ef_now = formation_energy(E_defect_q[q], q, Ef_slider)
+    ax.scatter(Ef_slider, Ef_now, color=colors[q], s=60)
+
 ax.axvline(Ef_slider, linestyle="--", color="red")
+ax.set_xlim(0, band_gap)
 ax.set_xlabel("Fermi Level (eV)")
 ax.set_ylabel("Formation Energy (eV)")
-ax.legend()
-ax.grid(True)
+ax.set_title(f"Fermi Level = {Ef_slider:.2f} eV")
+
 st.pyplot(fig)
 plt.close(fig)
 
-st.info(
-    "🎓 This slider shows **why defect stability depends on the Fermi level**."
-)
-
 # ============================================================
-# Section 5: Auto Animation
+# Section 6: Teaching Notes (Very Important)
 # ============================================================
-st.header("5️⃣ Automatic Animation")
-
-animate = st.checkbox("▶ Play Fermi-level animation")
-
-placeholder = st.empty()
-
-if animate:
-    for i in range(len(E_F)):
-        fig, ax = plt.subplots()
-        ax.plot(E_F, E_form, color="gray", alpha=0.4)
-        ax.scatter(E_F[i], E_form[i], color="red", s=80)
-        ax.axvline(E_F[i], linestyle="--", color="red")
-
-        ax.set_xlim(0, band_gap)
-        ax.set_ylim(min(E_form) - 0.5, max(E_form) + 0.5)
-        ax.set_xlabel("Fermi Level (eV)")
-        ax.set_ylabel("Formation Energy (eV)")
-        ax.set_title(f"Fermi Level = {E_F[i]:.2f} eV")
-
-        placeholder.pyplot(fig)
-        plt.close(fig)
-        time.sleep(0.03)
-
-# ============================================================
-# Section 6: Teaching Notes
-# ============================================================
-st.header("6️⃣ Key Teaching Takeaways")
+st.header("6️⃣ Physical Interpretation (Why This Matters)")
 
 st.markdown(
     """
-    ✔ Charged defects depend linearly on Fermi level  
-    ✔ Slopes = charge state **q**  
-    ✔ Line crossings = **charge transition levels (CTLs)**  
-    ✔ Growth conditions change chemical potentials  
-    ✔ Corrections are essential for charged defects  
+    **How to read this plot like a researcher**
 
-    This framework applies to:
-    - CdTe, CdSeTe, CZTS, CIGS
-    - Vacancies, interstitials, substitutionals
+    - The **lowest line** at a given Fermi level is the
+      **thermodynamically stable charge state**
+    - CTLs indicate **defect levels inside the band gap**
+    - Donor-like defects: CTL near CBM
+    - Acceptor-like defects: CTL near VBM
+    - Deep CTLs → recombination centers
+    - Shallow CTLs → effective dopants
+
+    This is exactly how defect tolerance and dopability
+    are evaluated in real DFT studies.
     """
 )
 
-st.success("🎉 You now understand and can *visualize* defect formation energy using DFT!")
+st.success("🎉 You now have a **realistic, publication-level defect formation energy tutorial**.")
