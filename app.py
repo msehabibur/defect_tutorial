@@ -615,6 +615,70 @@ with tab_atomistic:
                 structure_placeholder.pyplot(fig)
                 plt.close(fig)
                 
+                # Update energy plot during animation
+                if show_energy:
+                    steps_arr = np.arange(21)
+                    energies = [calculate_energy(s) for s in steps_arr]
+                    
+                    fig_e, ax_e = plt.subplots(figsize=(5, 3.5))
+                    ax_e.plot(steps_arr[:step+1], energies[:step+1], 'o-', color='steelblue', linewidth=2, markersize=4)
+                    ax_e.plot(steps_arr[step:], energies[step:], 'o-', color='lightblue', linewidth=1, markersize=3, alpha=0.3)
+                    ax_e.scatter([step], [energies[step]], 
+                             color='red', s=100, zorder=5, edgecolors='black', linewidth=2)
+                    ax_e.axvline(step, linestyle='--', color='red', alpha=0.5)
+                    
+                    ax_e.set_xlabel('Ionic Step', fontsize=9)
+                    ax_e.set_ylabel('Total Energy (eV)', fontsize=9)
+                    ax_e.set_title('DFT Energy Minimization', fontsize=10)
+                    ax_e.grid(True, alpha=0.3)
+                    ax_e.tick_params(labelsize=8)
+                    plt.tight_layout()
+                    energy_placeholder.pyplot(fig_e)
+                    plt.close(fig_e)
+                    
+                    # Update metrics
+                    current_energy = energies[step]
+                    if step > 0:
+                        energy_change = energies[step] - energies[step-1]
+                        energy_metric_placeholder.markdown(f"**Current Energy:** {current_energy:.3f} eV | **Change:** {energy_change:.4f} eV")
+                    else:
+                        energy_metric_placeholder.markdown(f"**Current Energy:** {current_energy:.3f} eV")
+                
+                # Update force plot during animation
+                steps_arr = np.arange(21)
+                max_forces = []
+                for s in range(21):
+                    _, _, f_temp, _ = generate_lattice(lattice_size, defect_type, s, strength=relaxation_strength)
+                    max_force = np.max([np.linalg.norm(f) for f in f_temp]) if len(f_temp) > 0 else 0
+                    max_forces.append(max_force)
+                
+                fig_f, ax_f = plt.subplots(figsize=(5, 3.5))
+                ax_f.plot(steps_arr[:step+1], max_forces[:step+1], 's-', color='green', linewidth=2, markersize=4)
+                ax_f.plot(steps_arr[step:], max_forces[step:], 's-', color='lightgreen', linewidth=1, markersize=3, alpha=0.3)
+                ax_f.axhline(0.05, linestyle='--', color='red', label='Convergence criterion', linewidth=1.5)
+                ax_f.scatter([step], [max_forces[step]], 
+                         color='red', s=100, zorder=5, edgecolors='black', linewidth=2)
+                ax_f.axvline(step, linestyle='--', color='red', alpha=0.5)
+                
+                ax_f.set_xlabel('Ionic Step', fontsize=9)
+                ax_f.set_ylabel('Max Force (eV/Å)', fontsize=9)
+                ax_f.set_title('Force Convergence', fontsize=10)
+                ax_f.legend(fontsize=8)
+                ax_f.grid(True, alpha=0.3)
+                ax_f.tick_params(labelsize=8)
+                plt.tight_layout()
+                force_placeholder.pyplot(fig_f)
+                plt.close(fig_f)
+                
+                # Update force metrics and status
+                current_force = max_forces[step]
+                force_metric_placeholder.markdown(f"**Max Force:** {current_force:.4f} eV/Å")
+                
+                if current_force < 0.05:
+                    status_placeholder.success("✅ Structure Converged!")
+                else:
+                    status_placeholder.warning("⚠️ Still Relaxing...")
+                
                 time.sleep(0.15)
             
             st.rerun()
@@ -672,9 +736,22 @@ with tab_atomistic:
             plt.close(fig)
     
     with col2:
+        if play_animation:
+            # Create placeholders for animated plots
+            if show_energy:
+                st.subheader("Energy Convergence")
+                energy_placeholder = st.empty()
+                energy_metric_placeholder = st.empty()
+            
+            st.subheader("Max Force on Atoms")
+            force_placeholder = st.empty()
+            force_metric_placeholder = st.empty()
+            status_placeholder = st.empty()
+        
         # Energy convergence
         if show_energy:
-            st.subheader("Energy Convergence")
+            if not play_animation:
+                st.subheader("Energy Convergence")
             
             steps = np.arange(21)
             energies = [calculate_energy(s) for s in steps]
@@ -684,33 +761,34 @@ with tab_atomistic:
             else:
                 current_step = relaxation_step
             
-            fig, ax = plt.subplots(figsize=(5, 3.5))
-            ax.plot(steps, energies, 'o-', color='steelblue', linewidth=2, markersize=4)
-            
             if not play_animation:
+                fig, ax = plt.subplots(figsize=(5, 3.5))
+                ax.plot(steps, energies, 'o-', color='steelblue', linewidth=2, markersize=4)
+                
                 ax.scatter([current_step], [energies[current_step]], 
                          color='red', s=100, zorder=5, edgecolors='black', linewidth=2)
                 ax.axvline(current_step, linestyle='--', color='red', alpha=0.5)
-            
-            ax.set_xlabel('Ionic Step', fontsize=9)
-            ax.set_ylabel('Total Energy (eV)', fontsize=9)
-            ax.set_title('DFT Energy Minimization', fontsize=10)
-            ax.grid(True, alpha=0.3)
-            ax.tick_params(labelsize=8)
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-            
-            # Current metrics
-            current_energy = energies[current_step] if not play_animation else energies[-1]
-            st.metric("Current Energy", f"{current_energy:.3f} eV")
-            
-            if current_step > 0:
-                energy_change = energies[current_step] - energies[current_step-1]
-                st.metric("Energy Change", f"{energy_change:.4f} eV")
+                
+                ax.set_xlabel('Ionic Step', fontsize=9)
+                ax.set_ylabel('Total Energy (eV)', fontsize=9)
+                ax.set_title('DFT Energy Minimization', fontsize=10)
+                ax.grid(True, alpha=0.3)
+                ax.tick_params(labelsize=8)
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close(fig)
+                
+                # Current metrics
+                current_energy = energies[current_step]
+                st.metric("Current Energy", f"{current_energy:.3f} eV")
+                
+                if current_step > 0:
+                    energy_change = energies[current_step] - energies[current_step-1]
+                    st.metric("Energy Change", f"{energy_change:.4f} eV")
         
         # Force convergence
-        st.subheader("Max Force on Atoms")
+        if not play_animation:
+            st.subheader("Max Force on Atoms")
         
         max_forces = []
         for s in range(21):
@@ -718,32 +796,32 @@ with tab_atomistic:
             max_force = np.max([np.linalg.norm(f) for f in forces]) if len(forces) > 0 else 0
             max_forces.append(max_force)
         
-        fig, ax = plt.subplots(figsize=(5, 3.5))
-        ax.plot(steps, max_forces, 's-', color='green', linewidth=2, markersize=4)
-        ax.axhline(0.05, linestyle='--', color='red', label='Convergence criterion', linewidth=1.5)
-        
         if not play_animation:
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            ax.plot(steps, max_forces, 's-', color='green', linewidth=2, markersize=4)
+            ax.axhline(0.05, linestyle='--', color='red', label='Convergence criterion', linewidth=1.5)
+            
             ax.scatter([current_step], [max_forces[current_step]], 
                      color='red', s=100, zorder=5, edgecolors='black', linewidth=2)
             ax.axvline(current_step, linestyle='--', color='red', alpha=0.5)
-        
-        ax.set_xlabel('Ionic Step', fontsize=9)
-        ax.set_ylabel('Max Force (eV/Å)', fontsize=9)
-        ax.set_title('Force Convergence', fontsize=10)
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-        ax.tick_params(labelsize=8)
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
-        
-        current_force = max_forces[current_step] if not play_animation else max_forces[-1]
-        st.metric("Max Force", f"{current_force:.4f} eV/Å")
-        
-        if current_force < 0.05:
-            st.success("✅ Structure Converged!")
-        else:
-            st.warning("⚠️ Still Relaxing...")
+            
+            ax.set_xlabel('Ionic Step', fontsize=9)
+            ax.set_ylabel('Max Force (eV/Å)', fontsize=9)
+            ax.set_title('Force Convergence', fontsize=10)
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(labelsize=8)
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+            
+            current_force = max_forces[current_step]
+            st.metric("Max Force", f"{current_force:.4f} eV/Å")
+            
+            if current_force < 0.05:
+                st.success("✅ Structure Converged!")
+            else:
+                st.warning("⚠️ Still Relaxing...")
     
     # Bottom explanation
     st.divider()
