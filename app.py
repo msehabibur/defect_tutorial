@@ -616,10 +616,10 @@ with tab_atomistic:
                 plt.close(fig)
                 
                 # Update energy plot during animation
+                steps_arr = np.arange(21)
+                energies = [calculate_energy(s) for s in steps_arr]
+                
                 if show_energy:
-                    steps_arr = np.arange(21)
-                    energies = [calculate_energy(s) for s in steps_arr]
-                    
                     fig_e, ax_e = plt.subplots(figsize=(5, 3.5))
                     ax_e.plot(steps_arr[:step+1], energies[:step+1], 'o-', color='steelblue', linewidth=2, markersize=4)
                     ax_e.plot(steps_arr[step:], energies[step:], 'o-', color='lightblue', linewidth=1, markersize=3, alpha=0.3)
@@ -643,9 +643,11 @@ with tab_atomistic:
                         energy_metric_placeholder.markdown(f"**Current Energy:** {current_energy:.3f} eV | **Change:** {energy_change:.4f} eV")
                     else:
                         energy_metric_placeholder.markdown(f"**Current Energy:** {current_energy:.3f} eV")
+                else:
+                    energy_placeholder.empty()
+                    energy_metric_placeholder.empty()
                 
                 # Update force plot during animation
-                steps_arr = np.arange(21)
                 max_forces = []
                 for s in range(21):
                     _, _, f_temp, _ = generate_lattice(lattice_size, defect_type, s, strength=relaxation_strength)
@@ -738,10 +740,9 @@ with tab_atomistic:
     with col2:
         if play_animation:
             # Create placeholders for animated plots
-            if show_energy:
-                st.subheader("Energy Convergence")
-                energy_placeholder = st.empty()
-                energy_metric_placeholder = st.empty()
+            st.subheader("Energy Convergence")
+            energy_placeholder = st.empty()
+            energy_metric_placeholder = st.empty()
             
             st.subheader("Max Force on Atoms")
             force_placeholder = st.empty()
