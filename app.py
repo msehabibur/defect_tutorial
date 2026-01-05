@@ -62,8 +62,8 @@ with st.expander("📚 How is Defect Formation Energy Obtained from DFT?", expan
 # ============================================================
 # Tabs
 # ============================================================
-tab_basic, tab_advanced = st.tabs(
-    ["🟦 Single Charge State (Basics)", "🟩 Multiple Charge States (Research)"]
+tab_basic, tab_advanced, tab_atomistic = st.tabs(
+    ["🟦 Single Charge State (Basics)", "🟩 Multiple Charge States (Research)", "⚛️ Atomistic Relaxation"]
 )
 
 # ============================================================
@@ -413,3 +413,366 @@ with tab_advanced:
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
+
+# ============================================================
+# ---------------- TAB 3: ATOMISTIC RELAXATION ---------------
+# ============================================================
+with tab_atomistic:
+    st.header("⚛️ Atomistic View: DFT Defect Relaxation")
+    
+    st.markdown("""
+    **Understand how atoms relax around a defect during DFT geometry optimization**
+    
+    This visualization shows:
+    - Initial unrelaxed atomic positions after defect creation
+    - Iterative atomic relaxation driven by forces
+    - Final relaxed structure with minimized energy
+    """)
+    
+    with st.expander("🔬 DFT Relaxation Process", expanded=False):
+        st.markdown("""
+        ### How DFT Relaxes Defect Structures
+        
+        1. **Create Defect**: Remove/add/substitute atoms in supercell
+        2. **Calculate Forces**: DFT computes Hellmann-Feynman forces on each atom
+        3. **Move Atoms**: Move atoms along force directions to minimize energy
+        4. **Iterate**: Repeat until forces < threshold (typically 0.01-0.05 eV/Å)
+        5. **Converged**: Final structure with minimum total energy
+        
+        **Relaxation Algorithms**: 
+        - Conjugate Gradient (CG)
+        - Quasi-Newton (BFGS, L-BFGS)
+        - FIRE (Fast Inertial Relaxation Engine)
+        - Damped Molecular Dynamics
+        
+        **Typical Convergence**: 10-50 ionic steps for point defects
+        """)
+    
+    # Sidebar controls
+    with st.sidebar:
+        st.header("⚛️ Atomistic Visualization")
+        
+        defect_type = st.selectbox(
+            "Defect Type",
+            ["Vacancy", "Interstitial", "Substitution"],
+            key="defect_type"
+        )
+        
+        lattice_size = st.slider("Supercell Size (atoms per side)", 3, 7, 5, key="lattice")
+        
+        relaxation_strength = st.slider(
+            "Relaxation Magnitude", 
+            0.1, 1.0, 0.5, 0.1,
+            help="How much atoms move around defect",
+            key="relax_strength"
+        )
+        
+        show_forces = st.checkbox("Show Force Vectors", value=True, key="forces")
+        show_energy = st.checkbox("Show Energy Convergence", value=True, key="energy_conv")
+        
+        st.divider()
+        play_animation = st.checkbox("▶️ Play Relaxation Animation", value=False, key="play_relax")
+        
+        if not play_animation:
+            relaxation_step = st.slider(
+                "Relaxation Step",
+                0, 20, 0, 1,
+                key="relax_step"
+            )
+    
+    # Generate atomic structure
+    def generate_lattice(size, defect_type, step, max_steps=20, strength=0.5):
+        """Generate atomic positions for lattice with defect"""
+        np.random.seed(42)
+        
+        # Create perfect lattice
+        positions = []
+        atom_types = []
+        
+        center = size // 2
+        defect_pos = np.array([center, center, center])
+        
+        for i in range(size):
+            for j in range(size):
+                for k in range(size):
+                    pos = np.array([i, j, k], dtype=float)
+                    
+                    # Skip center for vacancy
+                    if defect_type == "Vacancy" and np.allclose(pos, defect_pos):
+                        continue
+                    
+                    positions.append(pos)
+                    
+                    # Mark substitution
+                    if defect_type == "Substitution" and np.allclose(pos, defect_pos):
+                        atom_types.append("impurity")
+                    else:
+                        atom_types.append("host")
+        
+        # Add interstitial
+        if defect_type == "Interstitial":
+            positions.append(defect_pos + np.array([0.5, 0.5, 0.5]))
+            atom_types.append("impurity")
+        
+        positions = np.array(positions)
+        
+        # Apply relaxation displacement
+        progress = step / max_steps
+        damping = np.exp(-3 * progress)  # Exponential damping
+        
+        relaxed_positions = positions.copy()
+        forces = np.zeros_like(positions)
+        
+        for i, pos in enumerate(positions):
+            r = pos - (defect_pos + (0.5 if defect_type == "Interstitial" else 0))
+            dist = np.linalg.norm(r)
+            
+            if dist > 0.1:
+                # Displacement decreases with distance
+                displacement_mag = strength * np.exp(-dist / 2) * (1 - progress)
+                direction = r / dist
+                
+                # Inward for vacancy, outward for interstitial
+                if defect_type == "Vacancy":
+                    displacement = -displacement_mag * direction
+                elif defect_type == "Interstitial":
+                    displacement = displacement_mag * direction
+                else:  # Substitution
+                    displacement = 0.3 * displacement_mag * direction
+                
+                relaxed_positions[i] += displacement
+                forces[i] = -displacement * damping * 5  # Force proportional to displacement
+        
+        return relaxed_positions, atom_types, forces, progress
+    
+    def calculate_energy(step, max_steps=20):
+        """Simulate energy convergence"""
+        progress = step / max_steps
+        # Exponential decay to minimum
+        E_initial = 0.0
+        E_final = -2.5
+        energy = E_initial + (E_final - E_initial) * (1 - np.exp(-3 * progress))
+        return energy
+    
+    # Main visualization
+    col1, col2 = st.columns([1.5, 1])
+    
+    with col1:
+        st.subheader(f"3D Structure: {defect_type} Defect")
+        
+        if play_animation:
+            structure_placeholder = st.empty()
+            
+            for step in range(21):
+                positions, types, forces, progress = generate_lattice(
+                    lattice_size, defect_type, step, strength=relaxation_strength
+                )
+                
+                # Create 3D plot
+                from mpl_toolkits.mplot3d import Axes3D
+                fig = plt.figure(figsize=(7, 6))
+                ax = fig.add_subplot(111, projection='3d')
+                
+                # Plot atoms
+                host_atoms = positions[np.array(types) == "host"]
+                impurity_atoms = positions[np.array(types) == "impurity"]
+                
+                if len(host_atoms) > 0:
+                    ax.scatter(host_atoms[:, 0], host_atoms[:, 1], host_atoms[:, 2],
+                             c='steelblue', s=100, alpha=0.6, edgecolors='black', linewidth=0.5,
+                             label='Host atoms')
+                
+                if len(impurity_atoms) > 0:
+                    ax.scatter(impurity_atoms[:, 0], impurity_atoms[:, 1], impurity_atoms[:, 2],
+                             c='orange', s=150, alpha=0.9, edgecolors='black', linewidth=1,
+                             label='Impurity/Interstitial')
+                
+                # Mark defect location for vacancy
+                if defect_type == "Vacancy":
+                    center = lattice_size // 2
+                    ax.scatter([center], [center], [center],
+                             c='red', s=200, alpha=0.3, marker='x', linewidths=3,
+                             label='Vacancy site')
+                
+                # Show forces
+                if show_forces and step < 15:
+                    force_scale = 0.5
+                    for i, (pos, force) in enumerate(zip(positions, forces)):
+                        if np.linalg.norm(force) > 0.01:
+                            ax.quiver(pos[0], pos[1], pos[2],
+                                    force[0], force[1], force[2],
+                                    color='red', alpha=0.6, arrow_length_ratio=0.3,
+                                    linewidth=1.5, length=force_scale)
+                
+                ax.set_xlabel('X (Å)', fontsize=9)
+                ax.set_ylabel('Y (Å)', fontsize=9)
+                ax.set_zlabel('Z (Å)', fontsize=9)
+                ax.set_title(f'Relaxation Step {step}/20 | Progress: {progress*100:.0f}%', fontsize=11)
+                ax.legend(fontsize=8, loc='upper right')
+                ax.set_box_aspect([1,1,1])
+                
+                plt.tight_layout()
+                structure_placeholder.pyplot(fig)
+                plt.close(fig)
+                
+                time.sleep(0.15)
+            
+            st.rerun()
+        
+        else:
+            positions, types, forces, progress = generate_lattice(
+                lattice_size, defect_type, relaxation_step, strength=relaxation_strength
+            )
+            
+            # Create 3D plot
+            from mpl_toolkits.mplot3d import Axes3D
+            fig = plt.figure(figsize=(7, 6))
+            ax = fig.add_subplot(111, projection='3d')
+            
+            # Plot atoms
+            host_atoms = positions[np.array(types) == "host"]
+            impurity_atoms = positions[np.array(types) == "impurity"]
+            
+            if len(host_atoms) > 0:
+                ax.scatter(host_atoms[:, 0], host_atoms[:, 1], host_atoms[:, 2],
+                         c='steelblue', s=100, alpha=0.6, edgecolors='black', linewidth=0.5,
+                         label='Host atoms')
+            
+            if len(impurity_atoms) > 0:
+                ax.scatter(impurity_atoms[:, 0], impurity_atoms[:, 1], impurity_atoms[:, 2],
+                         c='orange', s=150, alpha=0.9, edgecolors='black', linewidth=1,
+                         label='Impurity/Interstitial')
+            
+            # Mark defect location for vacancy
+            if defect_type == "Vacancy":
+                center = lattice_size // 2
+                ax.scatter([center], [center], [center],
+                         c='red', s=200, alpha=0.3, marker='x', linewidths=3,
+                         label='Vacancy site')
+            
+            # Show forces
+            if show_forces and relaxation_step < 15:
+                force_scale = 0.5
+                for i, (pos, force) in enumerate(zip(positions, forces)):
+                    if np.linalg.norm(force) > 0.01:
+                        ax.quiver(pos[0], pos[1], pos[2],
+                                force[0], force[1], force[2],
+                                color='red', alpha=0.6, arrow_length_ratio=0.3,
+                                linewidth=1.5, length=force_scale)
+            
+            ax.set_xlabel('X (Å)', fontsize=9)
+            ax.set_ylabel('Y (Å)', fontsize=9)
+            ax.set_zlabel('Z (Å)', fontsize=9)
+            ax.set_title(f'Relaxation Step {relaxation_step}/20', fontsize=11)
+            ax.legend(fontsize=8, loc='upper right')
+            ax.set_box_aspect([1,1,1])
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+    
+    with col2:
+        # Energy convergence
+        if show_energy:
+            st.subheader("Energy Convergence")
+            
+            steps = np.arange(21)
+            energies = [calculate_energy(s) for s in steps]
+            
+            if play_animation:
+                current_step = 20
+            else:
+                current_step = relaxation_step
+            
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            ax.plot(steps, energies, 'o-', color='steelblue', linewidth=2, markersize=4)
+            
+            if not play_animation:
+                ax.scatter([current_step], [energies[current_step]], 
+                         color='red', s=100, zorder=5, edgecolors='black', linewidth=2)
+                ax.axvline(current_step, linestyle='--', color='red', alpha=0.5)
+            
+            ax.set_xlabel('Ionic Step', fontsize=9)
+            ax.set_ylabel('Total Energy (eV)', fontsize=9)
+            ax.set_title('DFT Energy Minimization', fontsize=10)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(labelsize=8)
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+            
+            # Current metrics
+            current_energy = energies[current_step] if not play_animation else energies[-1]
+            st.metric("Current Energy", f"{current_energy:.3f} eV")
+            
+            if current_step > 0:
+                energy_change = energies[current_step] - energies[current_step-1]
+                st.metric("Energy Change", f"{energy_change:.4f} eV")
+        
+        # Force convergence
+        st.subheader("Max Force on Atoms")
+        
+        max_forces = []
+        for s in range(21):
+            _, _, forces, _ = generate_lattice(lattice_size, defect_type, s, strength=relaxation_strength)
+            max_force = np.max([np.linalg.norm(f) for f in forces]) if len(forces) > 0 else 0
+            max_forces.append(max_force)
+        
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+        ax.plot(steps, max_forces, 's-', color='green', linewidth=2, markersize=4)
+        ax.axhline(0.05, linestyle='--', color='red', label='Convergence criterion', linewidth=1.5)
+        
+        if not play_animation:
+            ax.scatter([current_step], [max_forces[current_step]], 
+                     color='red', s=100, zorder=5, edgecolors='black', linewidth=2)
+            ax.axvline(current_step, linestyle='--', color='red', alpha=0.5)
+        
+        ax.set_xlabel('Ionic Step', fontsize=9)
+        ax.set_ylabel('Max Force (eV/Å)', fontsize=9)
+        ax.set_title('Force Convergence', fontsize=10)
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(labelsize=8)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        current_force = max_forces[current_step] if not play_animation else max_forces[-1]
+        st.metric("Max Force", f"{current_force:.4f} eV/Å")
+        
+        if current_force < 0.05:
+            st.success("✅ Structure Converged!")
+        else:
+            st.warning("⚠️ Still Relaxing...")
+    
+    # Bottom explanation
+    st.divider()
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **🔵 Vacancy Defect**
+        - Missing atom creates void
+        - Neighbors relax **inward**
+        - Reduces strain energy
+        - Common in irradiated materials
+        """)
+    
+    with col2:
+        st.markdown("""
+        **🟠 Interstitial Defect**
+        - Extra atom in lattice
+        - Neighbors push **outward**
+        - High formation energy
+        - Important for doping
+        """)
+    
+    with col3:
+        st.markdown("""
+        **🟡 Substitutional Defect**
+        - Atom replaced by impurity
+        - Size mismatch → relaxation
+        - Moderate distortion
+        - Most common dopant type
+        """)
